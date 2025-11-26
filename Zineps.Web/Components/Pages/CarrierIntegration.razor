@@ -1,0 +1,284 @@
+@page "/carrier-integration"
+@rendermode InteractiveServer
+@using Zineps.Core.Interfaces
+@using Zineps.Core.Services
+@inject ILoggerFactory LoggerFactory
+
+<PageTitle>SpeedShip Carrier Integration</PageTitle>
+
+<h1>SpeedShip Carrier Integration Demo</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5>Authentication</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary" @onclick="Authenticate" disabled="@isAuthenticating">
+                    @if (isAuthenticating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    Authenticate
+                </button>
+
+                @if (authResult != null)
+                {
+                    <div class="alert @(authResult.IsSuccess ? "alert-success" : "alert-danger") mt-3">
+                        @if (authResult.IsSuccess)
+                        {
+                            <strong>✓ Authentication Successful</strong>
+
+                            <br />
+                            <small>Token: @authResult.Token?.Substring(0, 20)...
+                                <br />Expires: @authResult.ExpiresAt?.ToString("yyyy-MM-dd HH:mm:ss")</small>
+                        }
+                        else
+                        {
+                            <strong>✗ Authentication Failed</strong>
+
+                            <br />
+                            <small>@authResult.ErrorMessage</small>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5>Create Shipment</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="@shipmentRequest" OnValidSubmit="CreateShipment" FormName="CreateShipmentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Recipient Name</label>
+                        <InputText class="form-control" @bind-Value="shipmentRequest.RecipientName" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <InputText class="form-control" @bind-Value="shipmentRequest.RecipientAddress" />
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">City</label>
+                            <InputText class="form-control" @bind-Value="shipmentRequest.RecipientCity" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Postal Code</label>
+                            <InputText class="form-control" @bind-Value="shipmentRequest.RecipientPostalCode" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Country</label>
+                            <InputText class="form-control" @bind-Value="shipmentRequest.RecipientCountry" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Weight (kg)</label>
+                            <InputNumber class="form-control" @bind-Value="shipmentRequest.Weight" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Zone</label>
+                            <InputSelect class="form-control" @bind-Value="shipmentRequest.Zone">
+                                <option value="NL">NL</option>
+                                <option value="EU">EU</option>
+                                <option value="INT">INT</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success" disabled="@isCreatingShipment">
+                        @if (isCreatingShipment)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        Create Shipment
+                    </button>
+                </EditForm>
+
+                @if (shipmentResult != null)
+                {
+                    <div class="alert @(shipmentResult.IsSuccess ? "alert-success" : "alert-danger") mt-3">
+                        @if (shipmentResult.IsSuccess)
+                        {
+                            <strong>✓ Shipment Created</strong>
+
+                            <br />
+                            <small>Tracking: @shipmentResult.TrackingNumber<br />
+                                Amount: €@shipmentResult.Amount.ToString("F2")</small>
+                        }
+                        else
+                        {
+                            <strong>✗ Shipment Failed</strong>
+
+                            <br />
+                            <small>@shipmentResult.ErrorMessage</small>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5>Get Label</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Tracking Number</label>
+                    <InputText class="form-control" @bind-Value="trackingNumber" />
+                </div>
+                <button class="btn btn-info" @onclick="GetLabel" disabled="@isGettingLabel">
+                    @if (isGettingLabel)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    Get Label
+                </button>
+
+                @if (labelResult != null)
+                {
+                    <div class="alert @(labelResult.IsSuccess ? "alert-success" : "alert-danger") mt-3">
+                        @if (labelResult.IsSuccess)
+                        {
+                            <strong>✓ Label Retrieved</strong>
+
+                            <br />
+                            <small>Format: @labelResult.Format<br />
+                                Data Length: @labelResult.LabelData?.Length bytes</small>
+                        }
+                        else
+                        {
+                            <strong>✗ Label Failed</strong>
+
+                            <br />
+                            <small>@labelResult.ErrorMessage</small>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5>Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="testModeCheck" @bind="testMode"
+                        @bind:after="UpdateTestMode">
+                    <label class="form-check-label" for="testModeCheck">
+                        Test Mode
+                    </label>
+                </div>
+                <small class="text-muted">
+                    Test mode simulates carrier responses without side effects
+                </small>
+
+                @if (testMode)
+                {
+                    <div class="alert alert-info mt-3">
+                        <small><strong>Test Mode Active:</strong> All API calls are simulated</small>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private SpeedShipIntegrationService? integrationService;
+    private ShipmentRequest shipmentRequest = new();
+    private string trackingNumber = "";
+    private bool testMode = true;
+
+    private AuthenticationResult? authResult;
+    private ShipmentResult? shipmentResult;
+    private LabelResult? labelResult;
+
+    private bool isAuthenticating;
+    private bool isCreatingShipment;
+    private bool isGettingLabel;
+
+    protected override void OnInitialized()
+    {
+        InitializeService();
+
+        // Set default values
+        shipmentRequest.RecipientName = "John Doe";
+        shipmentRequest.RecipientAddress = "Herengracht 501";
+        shipmentRequest.RecipientCity = "Amsterdam";
+        shipmentRequest.RecipientPostalCode = "1017 BV";
+        shipmentRequest.RecipientCountry = "NL";
+        shipmentRequest.Weight = 2.5;
+        shipmentRequest.Zone = "NL";
+    }
+
+    private void InitializeService()
+    {
+        var config = new SpeedShipConfiguration
+        {
+            ApiKey = "demo_api_key",
+            ApiSecret = "demo_api_secret",
+            TestMode = testMode
+        };
+        integrationService = new SpeedShipIntegrationService(LoggerFactory.CreateLogger<SpeedShipIntegrationService>(), config);
+    }
+
+    private void UpdateTestMode()
+    {
+        InitializeService();
+        authResult = null;
+        shipmentResult = null;
+        labelResult = null;
+    }
+
+    private async Task Authenticate()
+    {
+        isAuthenticating = true;
+        authResult = null;
+        try
+        {
+            authResult = await integrationService!.AuthenticateAsync();
+        }
+        finally
+        {
+            isAuthenticating = false;
+        }
+    }
+
+    private async Task CreateShipment()
+    {
+        isCreatingShipment = true;
+        shipmentResult = null;
+        try
+        {
+            shipmentResult = await integrationService!.CreateShipmentAsync(shipmentRequest);
+            if (shipmentResult.IsSuccess)
+            {
+                trackingNumber = shipmentResult.TrackingNumber ?? "";
+            }
+        }
+        finally
+        {
+            isCreatingShipment = false;
+        }
+    }
+
+    private async Task GetLabel()
+    {
+        isGettingLabel = true;
+        labelResult = null;
+        try
+        {
+            labelResult = await integrationService!.GetLabelAsync(trackingNumber);
+        }
+        finally
+        {
+            isGettingLabel = false;
+        }
+    }
+}

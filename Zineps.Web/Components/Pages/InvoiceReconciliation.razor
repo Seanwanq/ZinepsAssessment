@@ -1,0 +1,318 @@
+@page "/invoice-reconciliation"
+@rendermode InteractiveServer
+@using Zineps.Core.Models
+@using Zineps.Core.Services
+@using System.Text.Json
+@inject ILogger<InvoiceReconciliationService> Logger
+
+<PageTitle>Invoice Reconciliation</PageTitle>
+
+<h1>Invoice Reconciliation Demo</h1>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5>Sample Data</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary me-2" @onclick="LoadSampleData">Load Sample Data</button>
+                <button class="btn btn-success" @onclick="RunReconciliation" disabled="@isProcessing">
+                    @if (isProcessing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    Run Reconciliation
+                </button>
+
+                @if (carrierInvoices.Count > 0)
+                {
+                    <div class="alert alert-info mt-3">
+                        Loaded: @carrierInvoices.Count carrier invoices, @customerCharges.Count customer charges
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (report != null)
+        {
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5>Reconciliation Report</h5>
+                    <small class="text-muted">Generated: @report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss")</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="card text-white bg-primary mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Total Processed</h5>
+                                    <h2>@report.TotalRecordsProcessed</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-warning mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Discrepancies</h5>
+                                    <h2>@report.TotalDiscrepanciesFound</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-success mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Overcharged</h5>
+                                    <h2>€@report.Summary.TotalOvercharged.ToString("F2")</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-danger mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Undercharged</h5>
+                                    <h2>€@report.Summary.TotalUndercharged.ToString("F2")</h2>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h6>Summary by Type</h6>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Price Discrepancies</td>
+                                <td><span class="badge bg-warning">@report.Summary.PriceDiscrepancies</span></td>
+                            </tr>
+                            <tr>
+                                <td>Weight Discrepancies</td>
+                                <td><span class="badge bg-info">@report.Summary.WeightDiscrepancies</span></td>
+                            </tr>
+                            <tr>
+                                <td>Zone Discrepancies</td>
+                                <td><span class="badge bg-secondary">@report.Summary.ZoneDiscrepancies</span></td>
+                            </tr>
+                            <tr>
+                                <td>Fuel Surcharge Discrepancies</td>
+                                <td><span class="badge bg-primary">@report.Summary.FuelSurchargeDiscrepancies</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h6>Summary by Severity</h6>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>High</td>
+                                <td><span class="badge bg-danger">@report.Summary.HighSeverityCount</span></td>
+                            </tr>
+                            <tr>
+                                <td>Medium</td>
+                                <td><span class="badge bg-warning">@report.Summary.MediumSeverityCount</span></td>
+                            </tr>
+                            <tr>
+                                <td>Low</td>
+                                <td><span class="badge bg-success">@report.Summary.LowSeverityCount</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    @if (report.UnmatchedCarrierInvoices.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            <strong>Unmatched Carrier Invoices:</strong> @report.UnmatchedCarrierInvoices.Count
+                        </div>
+                    }
+
+                    @if (report.UnmatchedCustomerCharges.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            <strong>Unmatched Customer Charges:</strong> @report.UnmatchedCustomerCharges.Count
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (report.Discrepancies.Count > 0)
+            {
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Discrepancy Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Tracking #</th>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Financial Impact</th>
+                                    <th>Severity</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var discrepancy in report.Discrepancies.Take(20))
+                                {
+                                    <tr>
+                                        <td><code>@discrepancy.TrackingNumber</code></td>
+                                        <td><span class="badge bg-secondary">@discrepancy.DiscrepancyType</span></td>
+                                        <td><small>@discrepancy.Description</small></td>
+                                        <td>
+                                            @if (discrepancy.FinancialImpact != 0)
+                                            {
+                                                <span class="@(discrepancy.FinancialImpact > 0 ? "text-success" : "text-danger")">
+                                                    €@discrepancy.FinancialImpact.ToString("F2")
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="badge @GetSeverityBadgeClass(discrepancy.Severity)">
+                                                @discrepancy.Severity
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        @if (report.Discrepancies.Count > 20)
+                        {
+                            <p class="text-muted">Showing 20 of @report.Discrepancies.Count discrepancies</p>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5>JSON Export</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-outline-primary" @onclick="ShowJson">
+                        @(showJson ? "Hide" : "Show") JSON
+                    </button>
+                    @if (showJson)
+                    {
+                        <pre class="mt-3 p-3 bg-light border"><code>@reportJson</code></pre>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private InvoiceReconciliationService? reconciliationService;
+    private List<CarrierInvoiceLine> carrierInvoices = new();
+    private List<CustomerCharge> customerCharges = new();
+    private DiscrepancyReport? report;
+    private bool isProcessing;
+    private bool showJson;
+    private string reportJson = "";
+
+    protected override void OnInitialized()
+    {
+        var config = new ReconciliationConfiguration
+        {
+            PriceToleranceAmount = 0.01m,
+            WeightTolerancePercent = 0.05,
+            HighSeverityThreshold = 10.00m,
+            MediumSeverityThreshold = 2.00m
+        };
+        reconciliationService = new InvoiceReconciliationService(Logger, config);
+    }
+
+    private void LoadSampleData()
+    {
+        var now = DateTime.UtcNow;
+
+        carrierInvoices = new List<CarrierInvoiceLine>
+{
+new() { TrackingNumber = "SS20241126001", Amount = 5.99m, Weight = 2.0, Zone = "NL", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126002", Amount = 8.50m, Weight = 3.5, Zone = "EU", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126003", Amount = 12.00m, Weight = 5.0, Zone = "EU", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126004", Amount = 4.50m, Weight = 1.5, Zone = "NL", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126005", Amount = 15.00m, Weight = 7.0, Zone = "INT", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126006", Amount = 6.75m, Weight = 2.5, Zone = "NL", CarrierName = "SpeedShip",
+InvoiceDate = now },
+new() { TrackingNumber = "SS20241126999", Amount = 9.99m, Weight = 4.0, Zone = "EU", CarrierName = "SpeedShip",
+InvoiceDate = now }
+};
+
+        customerCharges = new List<CustomerCharge>
+{
+new() { TrackingNumber = "SS20241126001", BilledAmount = 5.99m, DeclaredWeight = 2.0, Zone = "NL", CustomerId =
+"CUST001", ChargeDate = now },
+new() { TrackingNumber = "SS20241126002", BilledAmount = 9.50m, DeclaredWeight = 3.5, Zone = "EU", CustomerId =
+"CUST002", ChargeDate = now }, // Price diff
+new() { TrackingNumber = "SS20241126003", BilledAmount = 12.00m, DeclaredWeight = 4.0, Zone = "EU", CustomerId =
+"CUST003", ChargeDate = now }, // Weight diff
+new() { TrackingNumber = "SS20241126004", BilledAmount = 4.50m, DeclaredWeight = 1.5, Zone = "EU", CustomerId =
+"CUST004", ChargeDate = now }, // Zone diff
+new() { TrackingNumber = "SS20241126005", BilledAmount = 30.00m, DeclaredWeight = 6.0, Zone = "INT", CustomerId =
+"CUST005", ChargeDate = now }, // Multiple diffs + high severity
+new() { TrackingNumber = "SS20241126006", BilledAmount = 6.75m, DeclaredWeight = 2.5, Zone = "NL", CustomerId =
+"CUST006", ChargeDate = now },
+new() { TrackingNumber = "SS20241126888", BilledAmount = 7.50m, DeclaredWeight = 3.0, Zone = "NL", CustomerId =
+"CUST007", ChargeDate = now } // Unmatched
+};
+    }
+
+    private async Task RunReconciliation()
+    {
+        if (carrierInvoices.Count == 0)
+        {
+            LoadSampleData();
+        }
+
+        isProcessing = true;
+        try
+        {
+            await Task.Delay(500); // Simulate processing
+            report = reconciliationService!.ReconcileInvoices(carrierInvoices, customerCharges);
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            reportJson = JsonSerializer.Serialize(report, options);
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void ShowJson()
+    {
+        showJson = !showJson;
+    }
+
+    private string GetSeverityBadgeClass(string severity)
+    {
+        return severity switch
+        {
+            "High" => "bg-danger",
+            "Medium" => "bg-warning",
+            "Low" => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+}
